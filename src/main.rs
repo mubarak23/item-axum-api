@@ -1,19 +1,24 @@
+
+mod handler;
+mod model;
+mod route;
+mod schema;
+
 use std::sync::Arc;
 
+use axum::http::{
+    header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
+    HeaderValue, Method
+};
+
 use dotenv::dotenv;
+use route::create_router;
+use tower_http::cors::CorsLayer;
+
 use axum::{response::IntoResponse, routing::get, Json, Router};
 
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 
-async fn health_checker_handler() -> impl IntoResponse {
-    const MESSAGE: &str = "Item Restful API with SQLX, Postgres,and Axum";
-
-    let json_response = serde_json::json!({
-        "status": "Success",
-        "message": MESSAGE
-    });
-    Json(json_response)
-}
 
 pub struct AppState {
     db: Pool<Postgres>
@@ -24,7 +29,10 @@ async fn main() {
 
     dotenv().ok();
 
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE URL Must be Set");
+    println!("{:?}", std::env::var("DATABASE_URL"));
+    let database_url = String::from("postgres://postgres:pass123@localhost/livecode");
+    // std::env::var("DATABASE_URL").expect("DATABASE URL Must be Set");
+    //String::from("postgres://postgres:pass123@localhost/livecode"); // 
 
     let pool = match PgPoolOptions::new()
         .max_connections(10)
@@ -40,19 +48,24 @@ async fn main() {
             std::process::exit(1);
         }
     };
+// ("http://localhost:3000".parse::<HeaderValue>().unwrap())
+    let wildcard_origin = HeaderValue::from_str("*").unwrap();
 
-    let app = Router::new().route("/api/healthcheck", get(health_checker_handler));
+    let cors = CorsLayer::new()
+        .allow_origin(wildcard_origin)
+        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
+        .allow_credentials(false)
+        .allow_headers([AUTHORIZATION, ACCEPT, CONTENT_TYPE]);
+        
+
+    let app = create_router(Arc::new(AppState { db: pool.clone() })).layer(cors);
+
 
     println!("Server Started Successfully");
 
-    axum::Server::bind(&"0.0.0.0:8000".parse().unwrap())
+    axum::Server::bind(&"0.0.0.0:8080".parse().unwrap())
         .serve(app.into_make_service())
         .await
         .unwrap();
 }
-
-// run rust program on watch  use => cargo watch -q -c -w src/ -x run
-
-// RUST_BACKTRACE=1 cargo run
-// RUST_BACKTRACE=1 cargo watch -q -c -w src/ -x run
 
